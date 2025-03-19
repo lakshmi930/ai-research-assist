@@ -68,3 +68,12 @@ def ask_llama(text, question):
 
     except Exception as e:
         return f"Exception: {str(e)}"
+    
+@app.post("/keywords/")
+def get_keywords():
+    """Allows users to find the keywords about the uploaded research paper."""
+    global document_text
+    if not document_text:
+        raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
+
+    return {"answer": ask_llama(document_text, "What are the keywords relevant to the research? Order them in decreasing order of frequency. Do not include random words just because they could be commonly occuring. Also, include the frequency of each keyword. Mention the keywords (if exists) and the ones that are extracted from the text.")}
