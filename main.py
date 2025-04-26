@@ -98,7 +98,7 @@ def ask_llama(question):
     
 @app.post("/keywords/")
 def get_keywords():
-    """Allows users to find the keywords about the uploaded research paper."""
+    """Extracts the keywords from the uploaded research paper."""
     if not document_text:
         raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
     
@@ -106,11 +106,31 @@ def get_keywords():
             You are personal research assistant.
             Extract the keywords from the research paper.
             {"Keep the answer relevant to {topic_text}." if topic_text else ""}
-            Paper content:\n{document_text}
             Avoid random words just because they could be commonly occuring.
             Order the keywords in decreasing order of frequency.
             Include the frequency of each keyword.
             Mention the keywords section (if exists) and the ones that are extracted from the text by you separately.
+            Paper content:\n{document_text}
+        """
+    command = f'ollama run llama3.2 "{prompt}"'
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        return result.stdout.strip()
+    else:
+        return f"Error: {result.stderr.strip()}"
+    
+@app.post("/idea/")
+def get_idea():
+    """Extracts the critical idea from the uploaded research paper."""
+    if not document_text:
+        raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
+    
+    prompt = f"""
+            You are personal research assistant.
+            Extract the critical idea from the research paper.
+            {"Keep the answer relevant to {topic_text}." if topic_text else ""}
+            Paper content:\n{document_text}
         """
     command = f'ollama run llama3.2 "{prompt}"'
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
