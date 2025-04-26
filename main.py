@@ -83,7 +83,8 @@ def get_title():
 
     prompt = f"""
             You are personal research assistant.
-            Extract the title from the research paper.
+            Extract the title from the research paper and the authors.
+            Do not include any greetings or other text.
             Paper content:\n{document_text}
         """
     command = f'ollama run llama3.2 "{prompt}"'
