@@ -1,8 +1,17 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
 import fitz  # PyMuPDF
 import subprocess
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Store extracted text in memory
 document_text = ""
@@ -38,8 +47,8 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         document_text = text[:3000]  # Store text for Q&A
         summary = summarize_text()
-
-        return {"filename": file.filename, "summary": summary}
+        title = get_title()
+        return { "filename": file.filename, "summary": summary, "title": title }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -53,6 +62,7 @@ def summarize_text():
             You are personal research assistant.
             Summarize given research paper concisely.
             {"Keep the answer relevant to {topic_text}." if topic_text else ""}
+            Do not include the title in the summary or authors or any greetings.
             Paper content:\n{document_text}
         """
         command = f'ollama run llama3.2 "{prompt}"'
@@ -65,6 +75,25 @@ def summarize_text():
 
     except Exception as e:
         return f"Exception: {str(e)}"
+    
+def get_title():
+    """Extracts the title from the uploaded research paper."""
+    if not document_text:
+        raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
+
+    prompt = f"""
+            You are personal research assistant.
+            Extract the title from the research paper.
+            Paper content:\n{document_text}
+        """
+    command = f'ollama run llama3.2 "{prompt}"'
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        return result.stdout.strip()
+    else:
+        return f"Error: {result.stderr.strip()}"
+
 
 @app.post("/ask/")
 def ask_question(question: str = Form(...)):
@@ -103,20 +132,20 @@ def get_keywords():
         raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
     
     prompt = f"""
-            You are personal research assistant.
-            Extract the keywords from the research paper.
-            {"Keep the answer relevant to {topic_text}." if topic_text else ""}
-            Avoid random words just because they could be commonly occuring.
-            Order the keywords in decreasing order of frequency.
-            Include the frequency of each keyword.
-            Mention the keywords section (if exists) and the ones that are extracted from the text by you separately.
+            Extract key terms and concepts from this research paper. Follow these guidelines:
+            1. Focus on domain-specific terms and technical concepts
+            2. Include variations and synonyms of important terms
+            3. Order by frequency of occurrence
+            4. Separate explicitly listed keywords from extracted terms
+            5. {"Prioritize terms relevant to: {topic_text}" if topic_text else ""}
+            
             Paper content:\n{document_text}
         """
     command = f'ollama run llama3.2 "{prompt}"'
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
     if result.returncode == 0:
-        return result.stdout.strip()
+        return { "keywords": result.stdout.strip() }
     else:
         return f"Error: {result.stderr.strip()}"
     
@@ -136,6 +165,6 @@ def get_idea():
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
     if result.returncode == 0:
-        return result.stdout.strip()
+        return { "idea": result.stdout.strip() }
     else:
         return f"Error: {result.stderr.strip()}"
