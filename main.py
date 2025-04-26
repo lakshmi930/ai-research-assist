@@ -6,6 +6,7 @@ app = FastAPI()
 
 # Store extracted text in memory
 document_text = ""
+topic_text = ""
 
 @app.get("/")
 def home():
@@ -14,17 +15,18 @@ def home():
 @app.post("/topic/")
 async def get_topic(topic: str = Form(None)):
     """Gets the topic of the researcher."""
-    if (topic == "" or topic == None):
-        raise HTTPException(status_code=500, detail="Topic is required")
     global topic_text
     topic_text = topic
+    if (topic_text == "" or topic_text == None):
+        return {"message": "Providing a topic helps with personalized responses."}
+    else:
+        return {"message": "Topic is set"}
     
 
 @app.post("/upload/")
 async def upload_pdf(file: UploadFile = File(...)):
     """Uploads a PDF file and summarizes it."""
     global document_text
-    global topic_text
     try:
         pdf_reader = fitz.open(stream=await file.read(), filetype="pdf")
         text = ""
@@ -34,22 +36,26 @@ async def upload_pdf(file: UploadFile = File(...)):
         if len(text) < 100:
             raise HTTPException(status_code=400, detail="PDF text is too short for analysis.")
 
-        document_text = text  # Store text for Q&A
-        summary = summarize_text(text, topic_text)
+        document_text = text[:3000]  # Store text for Q&A
+        summary = summarize_text()
 
         return {"filename": file.filename, "summary": summary}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def summarize_text(text, topic):
+def summarize_text():
     """Calls Llama 3.2 via Ollama for summarization."""
+    if not document_text:
+        raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
     try:
-        if topic:
-            command = f'ollama run llama3.2 "You are my research assistant.\nSummarize this research paper concisely with the topic-{topic} relevancy:\n{text[:3000]}"'
-        else:
-            print("No topic")
-            command = f'ollama run llama3.2 "Summarize this research paper concisely:\n{text}"'
+        prompt = f"""
+            You are personal research assistant.
+            Summarize given research paper concisely.
+            {"Keep the answer relevant to {topic_text}." if topic_text else ""}
+            Paper content:\n{document_text}
+        """
+        command = f'ollama run llama3.2 "{prompt}"'
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
         if result.returncode == 0:
@@ -63,17 +69,22 @@ def summarize_text(text, topic):
 @app.post("/ask/")
 def ask_question(question: str = Form(...)):
     """Allows users to ask questions about the uploaded research paper."""
-    global document_text
-    global topic_text
     if not document_text:
         raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
 
-    return {"answer": ask_llama(document_text, question, topic_text)}
+    return {"answer": ask_llama(question)}
 
-def ask_llama(text, question, topic):
+def ask_llama(question):
     """Calls Llama 3.2 via Ollama to answer questions about the document."""
+    if not document_text:
+        raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
     try:
-        prompt = f"Based on this research paper, answer the following question:\n\n{text[:3000]}\n\nQuestion: {question}. {"Keep the answer relevant to {topic}." if topic else ""}"
+        prompt = f"""
+            You are personal research assistant.
+            Based on this research paper, answer the following question:{document_text}
+            Question: {question}. 
+            {"Keep the answer relevant to {topic_text}." if topic_text else ""}
+        """
         command = f'ollama run llama3.2 "{prompt}"'
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
@@ -88,9 +99,23 @@ def ask_llama(text, question, topic):
 @app.post("/keywords/")
 def get_keywords():
     """Allows users to find the keywords about the uploaded research paper."""
-    global document_text
-    global topic_text
     if not document_text:
         raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
+    
+    prompt = f"""
+            You are personal research assistant.
+            Extract the keywords from the research paper.
+            {"Keep the answer relevant to {topic_text}." if topic_text else ""}
+            Paper content:\n{document_text}
+            Avoid random words just because they could be commonly occuring.
+            Order the keywords in decreasing order of frequency.
+            Include the frequency of each keyword.
+            Mention the keywords section (if exists) and the ones that are extracted from the text by you separately.
+        """
+    command = f'ollama run llama3.2 "{prompt}"'
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
-    return {"answer": ask_llama(document_text, "What are the keywords relevant to the research? Order them in decreasing order of frequency. Do not include random words just because they could be commonly occuring. Also, include the frequency of each keyword. Mention the keywords (if exists) and the ones that are extracted from the text.", topic_text)}
+    if result.returncode == 0:
+        return result.stdout.strip()
+    else:
+        return f"Error: {result.stderr.strip()}"
