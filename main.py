@@ -11,8 +11,17 @@ document_text = ""
 def home():
     return {"message": "AI Research Assistant is Running!"}
 
+@app.post("/topic/")
+async def get_topic(topic: str = Form(None)):
+    """Gets the topic of the researcher."""
+    if (topic == "" or topic == None):
+        raise HTTPException(status_code=500, detail="Topic is required")
+    global topic_text
+    topic_text = topic
+    
+
 @app.post("/upload/")
-async def upload_pdf(file: UploadFile = File(...), topic: str = Form(None)):
+async def upload_pdf(file: UploadFile = File(...)):
     """Uploads a PDF file and summarizes it."""
     global document_text
     global topic_text
@@ -26,8 +35,7 @@ async def upload_pdf(file: UploadFile = File(...), topic: str = Form(None)):
             raise HTTPException(status_code=400, detail="PDF text is too short for analysis.")
 
         document_text = text  # Store text for Q&A
-        topic_text = topic
-        summary = summarize_text(text, topic)
+        summary = summarize_text(text, topic_text)
 
         return {"filename": file.filename, "summary": summary}
 
